@@ -1,0 +1,832 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>SHA-256 Glass Box Visualizer</title>
+  <style>
+    :root {
+      --bg: #0D3643;
+      --surface: #123F4F;
+      --text: #E6F1F3;
+      --muted: #9FB7BF;
+      --accent: #F2A65A;
+      --accent-hover: #FFB703;
+      --danger: #ff6b6b;
+      --ok: #8be28b;
+      --mono: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+      --sans: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, "Apple Color Emoji", "Segoe UI Emoji";
+      --radius: 14px;
+      --shadow: 0 10px 30px rgba(0,0,0,.25);
+      --border: 1px solid rgba(230,241,243,.12);
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: var(--sans);
+      background: radial-gradient(1200px 800px at 20% 10%, rgba(242,166,90,.12), transparent 50%),
+                  radial-gradient(900px 600px at 80% 30%, rgba(255,183,3,.10), transparent 55%),
+                  var(--bg);
+      color: var(--text);
+    }
+    header {
+      padding: 28px 18px 10px;
+      max-width: 1200px;
+      margin: 0 auto;
+    }
+    h1 {
+      margin: 0 0 6px;
+      font-size: 26px;
+      letter-spacing: .2px;
+    }
+    .sub {
+      margin: 0;
+      color: var(--muted);
+      line-height: 1.4;
+    }
+    .wrap {
+      max-width: 1200px;
+      margin: 0 auto;
+      padding: 18px;
+      display: grid;
+      grid-template-columns: 420px 1fr;
+      gap: 18px;
+    }
+    @media (max-width: 980px) {
+      .wrap { grid-template-columns: 1fr; }
+    }
+
+    .card {
+      background: linear-gradient(180deg, rgba(18,63,79,.92), rgba(18,63,79,.78));
+      border: var(--border);
+      border-radius: var(--radius);
+      box-shadow: var(--shadow);
+      padding: 14px;
+    }
+    .card h2 {
+      margin: 0 0 10px;
+      font-size: 16px;
+      color: var(--text);
+    }
+    label {
+      display: block;
+      font-size: 12px;
+      color: var(--muted);
+      margin-bottom: 6px;
+    }
+    textarea, input[type="text"]{
+      width: 100%;
+      border-radius: 12px;
+      border: var(--border);
+      background: rgba(13,54,67,.7);
+      color: var(--text);
+      padding: 10px 12px;
+      font-family: var(--mono);
+      outline: none;
+    }
+    textarea { min-height: 120px; resize: vertical; }
+    .row {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 10px;
+      margin-top: 10px;
+    }
+    .btnrow { display: flex; gap: 10px; margin-top: 12px; flex-wrap: wrap; }
+    button {
+      border: none;
+      border-radius: 12px;
+      padding: 10px 12px;
+      cursor: pointer;
+      font-weight: 650;
+      background: var(--accent);
+      color: #1b1b1b;
+      transition: transform .05s ease, background .15s ease;
+    }
+    button:hover { background: var(--accent-hover); }
+    button:active { transform: translateY(1px); }
+    .ghost {
+      background: rgba(242,166,90,.14);
+      color: var(--text);
+      border: var(--border);
+    }
+    .ghost:hover { background: rgba(255,183,3,.20); }
+    .small {
+      font-size: 12px;
+      padding: 8px 10px;
+      border-radius: 10px;
+    }
+    .pill {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      padding: 8px 10px;
+      border: var(--border);
+      border-radius: 999px;
+      background: rgba(13,54,67,.5);
+      color: var(--muted);
+      font-size: 12px;
+    }
+    .hashbox {
+      margin-top: 12px;
+      padding: 10px 12px;
+      border-radius: 12px;
+      border: var(--border);
+      background: rgba(13,54,67,.65);
+      font-family: var(--mono);
+      word-break: break-all;
+      line-height: 1.35;
+    }
+    .ok { color: var(--ok); }
+    .danger { color: var(--danger); }
+
+    /* Right panel */
+    .panelHead {
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-end;
+      gap: 12px;
+      margin-bottom: 10px;
+    }
+    .panelHead .meta {
+      display: flex; flex-wrap: wrap; gap: 10px;
+      align-items: center;
+    }
+    details {
+      border: var(--border);
+      background: rgba(13,54,67,.45);
+      border-radius: 14px;
+      padding: 10px 12px;
+      margin-bottom: 10px;
+      overflow: hidden;
+    }
+    summary {
+      cursor: pointer;
+      list-style: none;
+      font-weight: 700;
+      color: var(--text);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+    }
+    summary::-webkit-details-marker { display: none; }
+    .sumRight {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      color: var(--muted);
+      font-weight: 600;
+      font-size: 12px;
+    }
+    .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+    .mono {
+      font-family: var(--mono);
+      font-size: 12px;
+      color: var(--text);
+      line-height: 1.4;
+    }
+    .muted { color: var(--muted); }
+    .kpi {
+      display: grid; gap: 6px;
+      padding: 10px;
+      border-radius: 12px;
+      border: var(--border);
+      background: rgba(18,63,79,.35);
+    }
+    .kpi .t { font-size: 12px; color: var(--muted); }
+    .kpi .v { font-family: var(--mono); font-size: 12px; word-break: break-all; }
+    .split {
+      display: grid; gap: 10px;
+      grid-template-columns: 1fr 1fr;
+    }
+    @media (max-width: 980px) { .split { grid-template-columns: 1fr; } }
+
+    .tableWrap {
+      margin-top: 10px;
+      border-radius: 12px;
+      border: var(--border);
+      overflow: auto;
+      max-height: 520px;
+      background: rgba(13,54,67,.35);
+    }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      font-family: var(--mono);
+      font-size: 12px;
+    }
+    th, td {
+      padding: 8px 10px;
+      border-bottom: 1px solid rgba(230,241,243,.10);
+      vertical-align: top;
+      white-space: nowrap;
+    }
+    th {
+      position: sticky;
+      top: 0;
+      background: rgba(18,63,79,.92);
+      color: var(--muted);
+      text-align: left;
+      z-index: 1;
+    }
+    tr:hover td { background: rgba(255,183,3,.06); }
+
+    .bitline {
+      font-family: var(--mono);
+      font-size: 12px;
+      line-height: 1.35;
+      white-space: pre-wrap;
+      word-break: break-word;
+      background: rgba(13,54,67,.55);
+      border: var(--border);
+      border-radius: 12px;
+      padding: 10px;
+      margin-top: 10px;
+    }
+    .badge {
+      display: inline-flex;
+      padding: 4px 8px;
+      border-radius: 999px;
+      border: var(--border);
+      background: rgba(242,166,90,.12);
+      color: var(--accent-hover);
+      font-size: 11px;
+      font-weight: 700;
+    }
+    .controls {
+      display: flex;
+      gap: 10px;
+      align-items: center;
+      flex-wrap: wrap;
+      margin-top: 10px;
+    }
+    input[type="range"] { width: 260px; }
+    .roundCard {
+      margin-top: 10px;
+      padding: 10px;
+      border-radius: 12px;
+      border: var(--border);
+      background: rgba(18,63,79,.35);
+    }
+    .cols8 {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 8px;
+    }
+    @media (max-width: 980px) { .cols8 { grid-template-columns: repeat(2, 1fr); } }
+    .cell {
+      border-radius: 10px;
+      border: var(--border);
+      background: rgba(13,54,67,.55);
+      padding: 8px;
+    }
+    .cell .k { color: var(--muted); font-size: 11px; }
+    .cell .v { font-family: var(--mono); font-size: 12px; margin-top: 4px; }
+    .note {
+      margin-top: 10px;
+      color: var(--muted);
+      font-size: 12px;
+      line-height: 1.4;
+    }
+  </style>
+</head>
+
+<body>
+  <header>
+    <h1>SHA-256 Glass Box Visualizer</h1>
+    <p class="sub">
+      Type a message and see exactly how SHA-256 transforms it:
+      bytes → padding → 512-bit blocks → message schedule W[0..63] → 64 compression rounds.
+      Built for clarity (not speed).
+    </p>
+  </header>
+
+  <div class="wrap">
+    <!-- Left controls -->
+    <section class="card">
+      <h2>Input</h2>
+      <label for="msg">Message (UTF-8)</label>
+      <textarea id="msg">abc</textarea>
+
+      <div class="row">
+        <div>
+          <label>Encoding</label>
+          <div class="pill">UTF-8 bytes</div>
+        </div>
+        <div>
+          <label>Output</label>
+          <div class="pill">SHA-256 hex digest</div>
+        </div>
+      </div>
+
+      <div class="btnrow">
+        <button id="runBtn">Run SHA-256 (trace)</button>
+        <button id="expandBtn" class="ghost">Expand all</button>
+        <button id="collapseBtn" class="ghost">Collapse all</button>
+      </div>
+
+      <div class="hashbox" id="digestBox">
+        <span class="muted">Digest will appear here…</span>
+      </div>
+
+      <div class="note">
+        Tip: Use the “Round scrubber” on the right to step through how <span class="badge">a..h</span> change each round.
+        Expand the “Round details” table to see W[t], K[t], Σ0/Σ1, Ch/Maj, T1/T2.
+      </div>
+    </section>
+
+    <!-- Right output -->
+    <section class="card" id="outCard">
+      <div class="panelHead">
+        <div>
+          <h2>Trace Output</h2>
+          <div class="muted" id="metaLine">Not run yet.</div>
+        </div>
+        <div class="meta">
+          <span class="pill" id="blocksPill">blocks: —</span>
+          <span class="pill" id="roundsPill">rounds: —</span>
+        </div>
+      </div>
+
+      <div id="output"></div>
+    </section>
+  </div>
+
+<script>
+/* ========= SHA-256 implementation with deep tracing ========= */
+
+const K = [
+  0x428a2f98,0x71374491,0xb5c0fbcf,0xe9b5dba5,0x3956c25b,0x59f111f1,0x923f82a4,0xab1c5ed5,
+  0xd807aa98,0x12835b01,0x243185be,0x550c7dc3,0x72be5d74,0x80deb1fe,0x9bdc06a7,0xc19bf174,
+  0xe49b69c1,0xefbe4786,0x0fc19dc6,0x240ca1cc,0x2de92c6f,0x4a7484aa,0x5cb0a9dc,0x76f988da,
+  0x983e5152,0xa831c66d,0xb00327c8,0xbf597fc7,0xc6e00bf3,0xd5a79147,0x06ca6351,0x14292967,
+  0x27b70a85,0x2e1b2138,0x4d2c6dfc,0x53380d13,0x650a7354,0x766a0abb,0x81c2c92e,0x92722c85,
+  0xa2bfe8a1,0xa81a664b,0xc24b8b70,0xc76c51a3,0xd192e819,0xd6990624,0xf40e3585,0x106aa070,
+  0x19a4c116,0x1e376c08,0x2748774c,0x34b0bcb5,0x391c0cb3,0x4ed8aa4a,0x5b9cca4f,0x682e6ff3,
+  0x748f82ee,0x78a5636f,0x84c87814,0x8cc70208,0x90befffa,0xa4506ceb,0xbef9a3f7,0xc67178f2
+];
+
+const H0 = [
+  0x6a09e667,0xbb67ae85,0x3c6ef372,0xa54ff53a,
+  0x510e527f,0x9b05688c,0x1f83d9ab,0x5be0cd19
+];
+
+function rotr(x,n){ return (x>>>n) | (x<<(32-n)); }
+function shr(x,n){ return x>>>n; }
+function add32(...xs){
+  let s = 0;
+  for (const x of xs) s = (s + (x>>>0))>>>0;
+  return s>>>0;
+}
+function hex32(x){ return (x>>>0).toString(16).padStart(8,'0'); }
+function bin8(b){ return (b & 0xff).toString(2).padStart(8,'0'); }
+function bin32(x){ return (x>>>0).toString(2).padStart(32,'0'); }
+function bytesToHex(bytes){ return bytes.map(b=> (b&255).toString(16).padStart(2,'0')).join(''); }
+function bytesToBits(bytes){ return bytes.map(bin8).join(''); }
+
+function utf8Bytes(str){
+  return new TextEncoder().encode(str);
+}
+
+// break bytes into 512-bit blocks, each block => 16 big-endian 32-bit words
+function bytesToBlocks512(bytes){
+  const blocks = [];
+  for (let i=0;i<bytes.length;i+=64){
+    const chunk = bytes.slice(i,i+64);
+    const words = new Uint32Array(16);
+    for (let w=0; w<16; w++){
+      const j = w*4;
+      words[w] = ((chunk[j]<<24) | (chunk[j+1]<<16) | (chunk[j+2]<<8) | chunk[j+3])>>>0;
+    }
+    blocks.push({bytes: chunk, words});
+  }
+  return blocks;
+}
+
+function padMessage(bytes){
+  const origLenBits = bytes.length * 8;
+  const out = Array.from(bytes);
+  out.push(0x80);
+  while ((out.length % 64) !== 56) out.push(0x00);
+
+  // 64-bit big-endian length
+  const hi = Math.floor(origLenBits / 2**32)>>>0;
+  const lo = (origLenBits>>>0);
+
+  out.push((hi>>>24)&255,(hi>>>16)&255,(hi>>>8)&255,hi&255);
+  out.push((lo>>>24)&255,(lo>>>16)&255,(lo>>>8)&255,lo&255);
+
+  return {
+    padded: new Uint8Array(out),
+    origLenBits,
+    hi, lo
+  };
+}
+
+function sha256Trace(message){
+  const bytes = utf8Bytes(message);
+  const bits = bytesToBits(Array.from(bytes));
+  const paddedInfo = padMessage(bytes);
+  const paddedBytes = paddedInfo.padded;
+  const paddedBits = bytesToBits(Array.from(paddedBytes));
+  const blocks = bytesToBlocks512(Array.from(paddedBytes));
+
+  let H = H0.slice();
+
+  const blockTraces = [];
+
+  blocks.forEach((blk, blockIndex) => {
+    // schedule W[0..63]
+    const W = new Uint32Array(64);
+    for (let t=0; t<16; t++) W[t] = blk.words[t]>>>0;
+
+    const scheduleSteps = []; // show how W[t] formed
+    for (let t=16; t<64; t++){
+      const x = W[t-15];
+      const y = W[t-2];
+      const s0 = (rotr(x,7) ^ rotr(x,18) ^ shr(x,3))>>>0;
+      const s1 = (rotr(y,17) ^ rotr(y,19) ^ shr(y,10))>>>0;
+      const wt = add32(W[t-16], s0, W[t-7], s1);
+      W[t] = wt;
+
+      scheduleSteps.push({
+        t,
+        w_t16: W[t-16]>>>0,
+        w_t15: x>>>0,
+        w_t7:  W[t-7]>>>0,
+        w_t2:  y>>>0,
+        s0, s1,
+        wt
+      });
+    }
+
+    // working vars
+    let [a,b,c,d,e,f,g,h] = H.map(x=>x>>>0);
+
+    const rounds = [];
+
+    for (let t=0; t<64; t++){
+      const S1 = (rotr(e,6) ^ rotr(e,11) ^ rotr(e,25))>>>0;
+      const ch = ((e & f) ^ (~e & g))>>>0;
+      const temp1 = add32(h, S1, ch, K[t], W[t]);
+      const S0 = (rotr(a,2) ^ rotr(a,13) ^ rotr(a,22))>>>0;
+      const maj = ((a & b) ^ (a & c) ^ (b & c))>>>0;
+      const temp2 = add32(S0, maj);
+
+      // store BEFORE update (so user can see inputs)
+      rounds.push({
+        t,
+        Wt: W[t]>>>0,
+        Kt: K[t]>>>0,
+        a:a>>>0,b:b>>>0,c:c>>>0,d:d>>>0,e:e>>>0,f:f>>>0,g:g>>>0,h:h>>>0,
+        S0,S1,ch,maj,temp1,temp2
+      });
+
+      // update
+      h = g;
+      g = f;
+      f = e;
+      e = add32(d, temp1);
+      d = c;
+      c = b;
+      b = a;
+      a = add32(temp1, temp2);
+    }
+
+    // compute H' = H + [a..h]
+    const H_before = H.slice().map(x=>x>>>0);
+    H = [
+      add32(H[0], a), add32(H[1], b), add32(H[2], c), add32(H[3], d),
+      add32(H[4], e), add32(H[5], f), add32(H[6], g), add32(H[7], h)
+    ];
+
+    blockTraces.push({
+      blockIndex,
+      blockBytes: blk.bytes,
+      blockWords: Array.from(blk.words),
+      W: Array.from(W),
+      scheduleSteps,
+      H_before,
+      rounds,
+      H_after: H.slice()
+    });
+  });
+
+  const digest = H.map(hex32).join('');
+
+  return {
+    message,
+    bytes: Array.from(bytes),
+    bits,
+    paddedBytes: Array.from(paddedBytes),
+    paddedBits,
+    origLenBits: paddedInfo.origLenBits,
+    blocksCount: blocks.length,
+    blockTraces,
+    digest
+  };
+}
+
+/* ========= UI helpers ========= */
+
+function el(tag, attrs={}, children=[]){
+  const n = document.createElement(tag);
+  for (const [k,v] of Object.entries(attrs)){
+    if (k === 'class') n.className = v;
+    else if (k === 'html') n.innerHTML = v;
+    else if (k.startsWith('on') && typeof v === 'function') n.addEventListener(k.slice(2), v);
+    else n.setAttribute(k, v);
+  }
+  for (const c of children){
+    n.appendChild(typeof c === 'string' ? document.createTextNode(c) : c);
+  }
+  return n;
+}
+
+function mkDetails(title, rightText, contentNodes, open=false){
+  const d = el('details', open ? {open:''}:{});
+  const s = el('summary', {}, [
+    el('span', {}, [title]),
+    el('span', {class:'sumRight'}, [rightText || ''])
+  ]);
+  d.appendChild(s);
+  contentNodes.forEach(n => d.appendChild(n));
+  return d;
+}
+
+function chunkBits(bitStr, width=8, group=8){
+  // width bits per chunk, group chunks per line
+  const chunks = [];
+  for (let i=0;i<bitStr.length;i+=width) chunks.push(bitStr.slice(i,i+width));
+  const lines = [];
+  for (let i=0;i<chunks.length;i+=group) lines.push(chunks.slice(i,i+group).join(' '));
+  return lines.join('\n');
+}
+
+function render(trace){
+  const out = document.getElementById('output');
+  out.innerHTML = '';
+
+  document.getElementById('digestBox').innerHTML =
+    `<div><span class="muted">SHA-256:</span> <span class="ok">${trace.digest}</span></div>`;
+
+  document.getElementById('metaLine').textContent =
+    `Message length: ${trace.bytes.length} bytes (${trace.origLenBits} bits) • Padded length: ${trace.paddedBytes.length} bytes (${trace.paddedBytes.length*8} bits)`;
+
+  document.getElementById('blocksPill').textContent = `blocks: ${trace.blocksCount}`;
+  document.getElementById('roundsPill').textContent = `rounds: ${trace.blocksCount * 64}`;
+
+  // 1) Bytes
+  const bytesHex = bytesToHex(trace.bytes);
+  const bytesDec = trace.bytes.join(', ');
+  const bytesBits = chunkBits(trace.bits, 8, 8);
+
+  out.appendChild(mkDetails(
+    '1) Input bytes (UTF-8) + bit view',
+    `${trace.bytes.length} bytes`,
+    [
+      el('div', {class:'split'}, [
+        el('div', {class:'kpi'}, [
+          el('div', {class:'t'}, ['Bytes (decimal)']),
+          el('div', {class:'v'}, [bytesDec])
+        ]),
+        el('div', {class:'kpi'}, [
+          el('div', {class:'t'}, ['Bytes (hex)']),
+          el('div', {class:'v'}, [bytesHex])
+        ]),
+      ]),
+      el('div', {class:'bitline'}, [bytesBits])
+    ],
+    true
+  ));
+
+  // 2) Padding
+  const paddedHex = bytesToHex(trace.paddedBytes);
+  out.appendChild(mkDetails(
+    '2) Padding (SHA-256) = message || 0x80 || zeros || 64-bit length',
+    `${trace.paddedBytes.length} bytes`,
+    [
+      el('div', {class:'split'}, [
+        el('div', {class:'kpi'}, [
+          el('div', {class:'t'}, ['Original bit length']),
+          el('div', {class:'v'}, [String(trace.origLenBits)])
+        ]),
+        el('div', {class:'kpi'}, [
+          el('div', {class:'t'}, ['Padded bytes (hex)']),
+          el('div', {class:'v'}, [paddedHex])
+        ]),
+      ]),
+      el('div', {class:'bitline'}, [chunkBits(trace.paddedBits, 8, 8)])
+    ],
+    false
+  ));
+
+  // 3) Blocks
+  const blocksDetails = [];
+  for (const bt of trace.blockTraces){
+    const wordsRows = bt.blockWords.map((w,i)=>[i, hex32(w), bin32(w)]);
+    const tbl = mkTable(['word','hex','bits'], wordsRows);
+
+    blocksDetails.push(
+      mkDetails(
+        `Block ${bt.blockIndex}: 512-bit chunk → 16 words (big-endian)`,
+        `W0..W15`,
+        [
+          el('div',{class:'kpi'},[
+            el('div',{class:'t'},['Block bytes (hex)']),
+            el('div',{class:'v'},[bytesToHex(bt.blockBytes)])
+          ]),
+          el('div', {class:'tableWrap'}, [tbl])
+        ],
+        bt.blockIndex===0
+      )
+    );
+  }
+  out.appendChild(mkDetails(
+    '3) Message blocks (512-bit) and initial 16 words W[0..15]',
+    `${trace.blocksCount} block(s)`,
+    blocksDetails,
+    false
+  ));
+
+  // 4) Message schedule W[0..63]
+  const schedNodes = trace.blockTraces.map(bt => {
+    const rows = bt.W.map((w,i)=>[i, hex32(w), bin32(w)]);
+    const tbl = mkTable(['t','W[t] hex','W[t] bits'], rows);
+    return mkDetails(
+      `Block ${bt.blockIndex}: Message schedule W[0..63]`,
+      `64 words`,
+      [
+        el('div',{class:'tableWrap'},[tbl]),
+        mkDetails(
+          'How W[t] is computed for t ≥ 16 (expand for formula inputs)',
+          `${bt.scheduleSteps.length} steps`,
+          [
+            el('div',{class:'tableWrap'},[
+              mkTable(
+                ['t','W[t-16]','W[t-15]','σ0(W[t-15])','W[t-7]','W[t-2]','σ1(W[t-2])','W[t]'],
+                bt.scheduleSteps.map(s => ([
+                  s.t,
+                  hex32(s.w_t16),
+                  hex32(s.w_t15),
+                  hex32(s.s0),
+                  hex32(s.w_t7),
+                  hex32(s.w_t2),
+                  hex32(s.s1),
+                  hex32(s.wt)
+                ]))
+              )
+            ])
+          ],
+          false
+        )
+      ],
+      false
+    );
+  });
+  out.appendChild(mkDetails(
+    '4) Message schedule (W[0..63])',
+    `${trace.blocksCount} block(s)`,
+    schedNodes,
+    false
+  ));
+
+  // 5) Compression rounds (interactive scrubber + table)
+  for (const bt of trace.blockTraces){
+    const roundsWrap = el('div', {});
+    const roundCount = bt.rounds.length;
+
+    const slider = el('input', {type:'range', min:'0', max:String(roundCount-1), value:'0'});
+    const label = el('span', {class:'pill'}, [`round: 1 / ${roundCount}`]);
+
+    const roundCard = el('div', {class:'roundCard'});
+    function renderRound(idx){
+      const r = bt.rounds[idx];
+      label.textContent = `round: ${idx+1} / ${roundCount} (t=${r.t})`;
+      roundCard.innerHTML = '';
+      roundCard.appendChild(el('div',{class:'cols8'}, [
+        cellKV('W[t]', hex32(r.Wt)),
+        cellKV('K[t]', hex32(r.Kt)),
+        cellKV('Σ0(a)', hex32(r.S0)),
+        cellKV('Σ1(e)', hex32(r.S1)),
+        cellKV('Ch(e,f,g)', hex32(r.ch)),
+        cellKV('Maj(a,b,c)', hex32(r.maj)),
+        cellKV('T1', hex32(r.temp1)),
+        cellKV('T2', hex32(r.temp2)),
+      ]));
+      roundCard.appendChild(el('div',{class:'cols8', style:'margin-top:10px;'}, [
+        cellKV('a', hex32(r.a)), cellKV('b', hex32(r.b)), cellKV('c', hex32(r.c)), cellKV('d', hex32(r.d)),
+        cellKV('e', hex32(r.e)), cellKV('f', hex32(r.f)), cellKV('g', hex32(r.g)), cellKV('h', hex32(r.h)),
+      ]));
+      roundCard.appendChild(el('div',{class:'note'},[
+        'Update rule: a ← T1+T2, e ← d+T1, then shift (h←g←f←e ...).'
+      ]));
+    }
+
+    slider.addEventListener('input', () => renderRound(Number(slider.value)));
+    renderRound(0);
+
+    const roundsTable = mkTable(
+      ['round','W[t]','K[t]','a','b','c','d','e','f','g','h','T1','T2'],
+      bt.rounds.map(r => [
+        r.t+1, hex32(r.Wt), hex32(r.Kt),
+        hex32(r.a),hex32(r.b),hex32(r.c),hex32(r.d),
+        hex32(r.e),hex32(r.f),hex32(r.g),hex32(r.h),
+        hex32(r.temp1),hex32(r.temp2)
+      ])
+    );
+
+    const Hbefore = bt.H_before.map(hex32).join(' ');
+    const Hafter  = bt.H_after.map(hex32).join(' ');
+    const Hnode = el('div',{class:'split'},[
+      el('div',{class:'kpi'},[el('div',{class:'t'},['H (initial for this block)']), el('div',{class:'v'},[Hbefore])]),
+      el('div',{class:'kpi'},[el('div',{class:'t'},['H (after block compression)']), el('div',{class:'v'},[Hafter])]),
+    ]);
+
+    roundsWrap.appendChild(Hnode);
+    roundsWrap.appendChild(el('div',{class:'controls'},[
+      el('span',{class:'muted'},['Round scrubber']),
+      slider,
+      label
+    ]));
+    roundsWrap.appendChild(roundCard);
+    roundsWrap.appendChild(mkDetails(
+      'Round details table (64 rows)',
+      'expand',
+      [el('div',{class:'tableWrap'},[roundsTable])],
+      false
+    ));
+
+    out.appendChild(mkDetails(
+      `5) Compression (Block ${bt.blockIndex}): 64 rounds`,
+      `64 rounds`,
+      [roundsWrap],
+      bt.blockIndex===0
+    ));
+  }
+
+  // Final digest
+  out.appendChild(mkDetails(
+    '6) Final digest',
+    'H0||H1||…||H7',
+    [
+      el('div',{class:'kpi'},[
+        el('div',{class:'t'},['SHA-256(message)']),
+        el('div',{class:'v'},[trace.digest])
+      ])
+    ],
+    true
+  ));
+}
+
+function mkTable(headers, rows){
+  const table = el('table');
+  const thead = el('thead');
+  const trh = el('tr');
+  headers.forEach(h => trh.appendChild(el('th',{},[h])));
+  thead.appendChild(trh);
+  const tbody = el('tbody');
+  rows.forEach(r=>{
+    const tr = el('tr');
+    r.forEach(c=>{
+      tr.appendChild(el('td',{},[String(c)]));
+    });
+    tbody.appendChild(tr);
+  });
+  table.appendChild(thead);
+  table.appendChild(tbody);
+  return table;
+}
+
+function cellKV(k,v){
+  return el('div',{class:'cell'},[
+    el('div',{class:'k'},[k]),
+    el('div',{class:'v'},[v])
+  ]);
+}
+
+/* ========= Wire buttons ========= */
+
+document.getElementById('runBtn').addEventListener('click', () => {
+  const msg = document.getElementById('msg').value;
+  try{
+    const trace = sha256Trace(msg);
+    render(trace);
+  } catch(e){
+    document.getElementById('digestBox').innerHTML =
+      `<span class="danger">Error:</span> ${String(e && e.message ? e.message : e)}`;
+  }
+});
+
+document.getElementById('expandBtn').addEventListener('click', () => {
+  document.querySelectorAll('#output details').forEach(d => d.open = true);
+});
+document.getElementById('collapseBtn').addEventListener('click', () => {
+  document.querySelectorAll('#output details').forEach(d => d.open = false);
+});
+
+// Auto-run once
+document.getElementById('runBtn').click();
+</script>
+</body>
+</html>
