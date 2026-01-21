@@ -288,6 +288,57 @@
       font-size: 12px;
       line-height: 1.4;
     }
+
+    /* NEW: feed-forward highlighting */
+    .hl {
+      outline: 2px solid rgba(255,183,3,.35);
+      box-shadow: 0 0 0 3px rgba(255,183,3,.10) inset;
+    }
+    .ffRow {
+      display: grid;
+      grid-template-columns: 1fr 1fr 1fr;
+      gap: 8px;
+      margin-top: 10px;
+    }
+    @media (max-width: 980px) { .ffRow { grid-template-columns: 1fr; } }
+    .ffEq {
+      display: grid;
+      gap: 6px;
+      padding: 10px;
+      border-radius: 12px;
+      border: var(--border);
+      background: rgba(13,54,67,.40);
+    }
+    .ffEq .lhs { font-family: var(--mono); font-size: 12px; color: var(--muted); }
+    .ffEq .rhs { font-family: var(--mono); font-size: 12px; word-break: break-all; }
+    .ffEq .rhs b { color: var(--accent-hover); }
+    .ffHelp {
+      display: flex;
+      gap: 10px;
+      align-items: center;
+      flex-wrap: wrap;
+      margin-top: 10px;
+    }
+    .toggle {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      border: var(--border);
+      background: rgba(13,54,67,.55);
+      padding: 8px 10px;
+      border-radius: 999px;
+      cursor: pointer;
+      user-select: none;
+      font-size: 12px;
+      color: var(--muted);
+    }
+    .toggle input { accent-color: var(--accent-hover); }
+    .copyBtn {
+      border: var(--border);
+      background: rgba(242,166,90,.14);
+      color: var(--text);
+    }
+    .copyBtn:hover { background: rgba(255,183,3,.20); }
   </style>
 </head>
 
@@ -332,6 +383,8 @@
       <div class="note">
         Tip: Use the “Round scrubber” on the right to step through how <span class="badge">a..h</span> change each round.
         Expand the “Round details” table to see W[t], K[t], Σ0/Σ1, Ch/Maj, T1/T2.
+        <br><br>
+        NEW: Expand “6) Feed-forward” to see how the final digest is produced by <span class="badge">H + (a..h)</span>.
       </div>
     </section>
 
@@ -493,12 +546,18 @@ function sha256Trace(message){
       a = add32(temp1, temp2);
     }
 
-    // compute H' = H + [a..h]
+    // NEW: capture end-of-round working vars (a..h at t=64)
+    const work_after = [a,b,c,d,e,f,g,h].map(x=>x>>>0);
+
+    // compute H' = H + [a..h]   (feed-forward)
     const H_before = H.slice().map(x=>x>>>0);
-    H = [
+
+    const H_after = [
       add32(H[0], a), add32(H[1], b), add32(H[2], c), add32(H[3], d),
       add32(H[4], e), add32(H[5], f), add32(H[6], g), add32(H[7], h)
     ];
+
+    H = H_after.slice();
 
     blockTraces.push({
       blockIndex,
@@ -508,7 +567,8 @@ function sha256Trace(message){
       scheduleSteps,
       H_before,
       rounds,
-      H_after: H.slice()
+      work_after,        // <— NEW
+      H_after: H_after   // <— ensure stored explicitly
     });
   });
 
@@ -562,6 +622,239 @@ function chunkBits(bitStr, width=8, group=8){
   for (let i=0;i<chunks.length;i+=group) lines.push(chunks.slice(i,i+group).join(' '));
   return lines.join('\n');
 }
+
+function mkTable(headers, rows){
+  const table = el('table');
+  const thead = el('thead');
+  const trh = el('tr');
+  headers.forEach(h => trh.appendChild(el('th',{},[h])));
+  thead.appendChild(trh);
+  const tbody = el('tbody');
+  rows.forEach(r=>{
+    const tr = el('tr');
+    r.forEach(c=>{
+      tr.appendChild(el('td',{},[String(c)]));
+    });
+    tbody.appendChild(tr);
+  });
+  table.appendChild(thead);
+  table.appendChild(tbody);
+  return table;
+}
+
+function cellKV(k,v, extraClass=''){
+  return el('div',{class:`cell ${extraClass}`.trim()},[
+    el('div',{class:'k'},[k]),
+    el('div',{class:'v'},[v])
+  ]);
+}
+
+function copyToClipboard(text){
+  // safe fallback for older browsers
+  if (navigator.clipboard && navigator.clipboard.writeText) {
+    return navigator.clipboard.writeText(text);
+  }
+  const ta = document.createElement('textarea');
+  ta.value = text;
+  document.body.appendChild(ta);
+  ta.select();
+  document.execCommand('copy');
+  document.body.removeChild(ta);
+  return Promise.resolve();
+}
+
+/* ========= NEW: Feed-forward (interactive) ========= */
+
+function renderFeedForward(bt){
+  // bt.H_before (8), bt.work_after (8), bt.H_after (8)
+  const idxName = ['0','1','2','3','4','5','6','7'];
+  const Wnames = ['a','b','c','d','e','f','g','h'];
+
+  // controls
+  const stepSlider = el('input', {type:'range', min:'0', max:'8', value:'0'});
+  const stepPill   = el('span', {class:'pill'}, ['step: 0 / 8 (nothing applied)']);
+
+  const animateToggleLabel = el('label',{class:'toggle'},[
+    el('input',{type:'checkbox', id:'ffAuto', checked:''}),
+    el('span',{},['Auto-animate'])
+  ]);
+
+  const focusToggleLabel = el('label',{class:'toggle'},[
+    el('input',{type:'checkbox', id:'ffFocus', checked:''}),
+    el('span',{},['Highlight active lane'])
+  ]);
+
+  const copyDigestBtn = el('button',{class:'small copyBtn'},['Copy digest']);
+  copyDigestBtn.addEventListener('click', async () => {
+    await copyToClipboard(bt.H_after.map(hex32).join(''));
+    copyDigestBtn.textContent = 'Copied!';
+    setTimeout(()=> copyDigestBtn.textContent='Copy digest', 800);
+  });
+
+  const copyWordsBtn = el('button',{class:'small ghost'},['Copy H0..H7 (hex)']);
+  copyWordsBtn.addEventListener('click', async () => {
+    await copyToClipboard(bt.H_after.map(hex32).join(' '));
+    copyWordsBtn.textContent = 'Copied!';
+    setTimeout(()=> copyWordsBtn.textContent='Copy H0..H7 (hex)', 800);
+  });
+
+  const ffHelp = el('div',{class:'ffHelp'},[
+    el('span',{class:'muted'},['Feed-forward scrubber']),
+    stepSlider,
+    stepPill,
+    animateToggleLabel,
+    focusToggleLabel,
+    copyDigestBtn,
+    copyWordsBtn
+  ]);
+
+  // rows container (8 equations)
+  const lanesWrap = el('div', {class:'tableWrap'}, []);
+  const table = el('table');
+  const thead = el('thead');
+  thead.appendChild(el('tr',{},[
+    el('th',{},['lane']),
+    el('th',{},['H_before']),
+    el('th',{},['work var']),
+    el('th',{},['operation']),
+    el('th',{},['H_after (partial)']),
+  ]));
+  table.appendChild(thead);
+
+  const tbody = el('tbody');
+  table.appendChild(tbody);
+  lanesWrap.appendChild(table);
+
+  // digest view
+  const digestKPI = el('div',{class:'kpi'},[
+    el('div',{class:'t'},['Digest (H0||H1||…||H7)']),
+    el('div',{class:'v'},[bt.H_after.map(hex32).join('')])
+  ]);
+
+  function fmtLane(i){
+    return `H${idxName[i]}`;
+  }
+  function fmtWork(i){
+    return Wnames[i];
+  }
+
+  function partialHAfter(step){
+    // step: 0..8 means how many lanes have been applied
+    const arr = bt.H_before.slice().map(x=>x>>>0);
+    for (let i=0;i<step;i++){
+      arr[i] = add32(arr[i], bt.work_after[i]);
+    }
+    return arr;
+  }
+
+  function renderStep(step){
+    const focusOn = document.getElementById('ffFocus')?.checked ?? true;
+    stepPill.textContent =
+      step === 0 ? `step: 0 / 8 (nothing applied)`
+                : `step: ${step} / 8 (applied lanes 0..${step-1})`;
+
+    const hPartial = partialHAfter(step);
+    tbody.innerHTML = '';
+
+    for (let i=0;i<8;i++){
+      const applied = i < step;
+      const active = (step > 0 && i === step-1);
+
+      const tr = el('tr', {}, []);
+      if (focusOn && active) tr.classList.add('hl');
+
+      // columns
+      const laneCell = el('td', {class: focusOn && active ? 'hl' : ''}, [fmtLane(i)]);
+      const hBeforeCell = el('td', {}, [hex32(bt.H_before[i])]);
+      const workCell = el('td', {}, [`${fmtWork(i)} = ${hex32(bt.work_after[i])}`]);
+
+      const opCell = el('td', {class:'muted'}, [
+        applied
+          ? `${hex32(bt.H_before[i])} + ${hex32(bt.work_after[i])} (mod 2^32)`
+          : '—'
+      ]);
+
+      const afterCell = el('td', {}, [
+        applied ? hex32(hPartial[i]) : hex32(bt.H_before[i])
+      ]);
+
+      // emphasize applied values
+      if (applied) {
+        afterCell.innerHTML = `<b>${afterCell.textContent}</b>`;
+      }
+
+      tr.appendChild(laneCell);
+      tr.appendChild(hBeforeCell);
+      tr.appendChild(workCell);
+      tr.appendChild(opCell);
+      tr.appendChild(afterCell);
+
+      tbody.appendChild(tr);
+    }
+  }
+
+  // slider wiring
+  stepSlider.addEventListener('input', () => {
+    renderStep(Number(stepSlider.value));
+  });
+
+  // auto animate
+  let timer = null;
+  function startAuto(){
+    stopAuto();
+    timer = setInterval(()=>{
+      const cur = Number(stepSlider.value);
+      const next = (cur >= 8) ? 0 : cur + 1;
+      stepSlider.value = String(next);
+      renderStep(next);
+    }, 650);
+  }
+  function stopAuto(){
+    if (timer) { clearInterval(timer); timer = null; }
+  }
+
+  // toggles
+  // (we keep using ids but re-created per render; safe since only one expanded at a time usually)
+  setTimeout(() => {
+    const auto = document.getElementById('ffAuto');
+    const focus = document.getElementById('ffFocus');
+    auto?.addEventListener('change', () => auto.checked ? startAuto() : stopAuto());
+    focus?.addEventListener('change', () => renderStep(Number(stepSlider.value)));
+    if (auto?.checked) startAuto();
+  }, 0);
+
+  // initial render
+  renderStep(0);
+
+  // also show the classic equation layout cards (nice for quick reading)
+  const eqCards = el('div', {class:'ffRow'}, [
+    el('div',{class:'ffEq'},[
+      el('div',{class:'lhs'},['Working vars after round 64']),
+      el('div',{class:'rhs'},[
+        `a..h = ${bt.work_after.map(hex32).join(' ')}`
+      ])
+    ]),
+    el('div',{class:'ffEq'},[
+      el('div',{class:'lhs'},['H before feed-forward']),
+      el('div',{class:'rhs'},[
+        `H = ${bt.H_before.map(hex32).join(' ')}`
+      ])
+    ]),
+    el('div',{class:'ffEq'},[
+      el('div',{class:'lhs'},['H after feed-forward']),
+      el('div',{class:'rhs'},[
+        `H' = <b>${bt.H_after.map(hex32).join(' ')}</b>`
+      ])
+    ]),
+  ]);
+
+  // teardown on collapse: stop timer
+  const container = el('div', {}, [ffHelp, eqCards, lanesWrap, digestKPI]);
+  container._stop = stopAuto;
+  return container;
+}
+
+/* ========= Main render ========= */
 
 function render(trace){
   const out = document.getElementById('output');
@@ -763,11 +1056,27 @@ function render(trace){
       [roundsWrap],
       bt.blockIndex===0
     ));
+
+    // NEW: Feed-forward section (the missing step)
+    const ffContainer = renderFeedForward(bt);
+    const ffDetails = mkDetails(
+      `6) Feed-forward (Block ${bt.blockIndex}): H[i] ← H[i] + work[i] (mod 2^32)`,
+      'interactive',
+      [ffContainer],
+      bt.blockIndex===0
+    );
+
+    // stop auto animation when collapsed
+    ffDetails.addEventListener('toggle', () => {
+      if (!ffDetails.open && ffContainer._stop) ffContainer._stop();
+    });
+
+    out.appendChild(ffDetails);
   }
 
   // Final digest
   out.appendChild(mkDetails(
-    '6) Final digest',
+    '7) Final digest',
     'H0||H1||…||H7',
     [
       el('div',{class:'kpi'},[
@@ -777,32 +1086,6 @@ function render(trace){
     ],
     true
   ));
-}
-
-function mkTable(headers, rows){
-  const table = el('table');
-  const thead = el('thead');
-  const trh = el('tr');
-  headers.forEach(h => trh.appendChild(el('th',{},[h])));
-  thead.appendChild(trh);
-  const tbody = el('tbody');
-  rows.forEach(r=>{
-    const tr = el('tr');
-    r.forEach(c=>{
-      tr.appendChild(el('td',{},[String(c)]));
-    });
-    tbody.appendChild(tr);
-  });
-  table.appendChild(thead);
-  table.appendChild(tbody);
-  return table;
-}
-
-function cellKV(k,v){
-  return el('div',{class:'cell'},[
-    el('div',{class:'k'},[k]),
-    el('div',{class:'v'},[v])
-  ]);
 }
 
 /* ========= Wire buttons ========= */
